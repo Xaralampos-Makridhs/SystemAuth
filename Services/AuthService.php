@@ -3,10 +3,11 @@
 class AuthService
 {
     private $conn;
+    private $mailer;
 
-    public function __construct($conn)
-    {
+    public function __construct($conn,$mailer){
         $this->conn = $conn;
+        $this->mailer=$mailer;
     }
 
     private function generateToken()
@@ -63,13 +64,23 @@ class AuthService
 
             $this->conn->commit();
 
-            // προσωρινά για testing
-            $_SESSION['verify_token'] = $token;
+            $link=$_ENV['APP_URL'].'/verify-email.php?token='.urlencode($token);
 
-            return true;
+            $html="
+                <h2>Verify Your Email </h2>
+                <p>Hello {$name}!</p>
+                <p>Click the link below to verify your email.</p>
+                <p><a href='{$link}'>Verify Email</a></p>
+                <p>This link expires in 1 hour.</p>
+            ";
+
+            return $this->mailer->send($email,'Verify Your Email',$html);
 
         } catch (PDOException $e) {
-            $this->conn->rollBack();
+            if($this->conn->inTransaction()){
+                $this->conn->rollBack();
+            }
+            
             error_log("Register Error: " . $e->getMessage());
             return false;
         }
