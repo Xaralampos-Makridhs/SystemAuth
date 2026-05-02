@@ -1,5 +1,5 @@
 <?php
-    require_once __DIR__.'/bootstrap.php';
+    require_once __DIR__ . '/../bootstrap.php';
 
     class Database{
         private $host;
@@ -27,10 +27,11 @@
 
                 $this->conn->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMODE_EXCEPTION);
                 $this->conn->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE,PDO::FETCH_ASSOC);
+
+                return $this->conn;
             }catch(PDOException $e){
-                error_log("Connection error:").$e->getMessage().((int)$e->getCode());
+                error_log("Connection error: " . $e->getMessage() . " Code: " . $e->getCode());
                 return null;
             }
-            return $this->conn;
         }
     }
