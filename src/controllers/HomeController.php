@@ -1,11 +1,10 @@
 <?php
     class HomeController{
         public function index() {
-            echo "<h1>Home Page </h1>";
+            require __DIR__.'/../views/home.php';
         }
 
         public function about(){
-            echo "<h1>About Page </h1>";
+            require __DIR__.'/../views/about.php';
         }
-
     }
