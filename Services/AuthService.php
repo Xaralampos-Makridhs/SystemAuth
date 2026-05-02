@@ -48,7 +48,6 @@ class AuthService
 
             $userId = (int) $this->conn->lastInsertId();
 
-            // Create verification token
             $token = $this->generateToken();
             $tokenHash = $this->hashToken($token);
 
@@ -80,9 +79,74 @@ class AuthService
             if($this->conn->inTransaction()){
                 $this->conn->rollBack();
             }
-            
+
             error_log("Register Error: " . $e->getMessage());
             return false;
         }
     }
+
+    public function verifyEmail($token)
+    {
+        if (!$token) {
+            return false;
+        }
+
+        $tokenHash = $this->hashToken($token);
+
+        try {
+            $stmt = $this->conn->prepare("
+            SELECT *
+            FROM email_verified_tokens
+            WHERE token_hash = :token_hash
+              AND used_at IS NULL
+              AND expires_at > NOW()
+            LIMIT 1
+        ");
+
+            $stmt->execute([
+                ':token_hash' => $tokenHash
+            ]);
+
+            $row = $stmt->fetch();
+
+            if (!$row) {
+                return false;
+            }
+
+            $this->conn->beginTransaction();
+
+            $stmt = $this->conn->prepare("
+            UPDATE users
+            SET email_verified_at = NOW()
+            WHERE id = :user_id
+        ");
+
+            $stmt->execute([
+                ':user_id' => $row['user_id']
+            ]);
+
+            $stmt = $this->conn->prepare("
+            UPDATE email_verified_tokens
+            SET used_at = NOW()
+            WHERE id = :id
+        ");
+
+            $stmt->execute([
+                ':id' => $row['id']
+            ]);
+
+            $this->conn->commit();
+
+            return true;
+
+        } catch (PDOException $e) {
+            if ($this->conn->inTransaction()) {
+                $this->conn->rollBack();
+            }
+
+            error_log('Verify Email Error: ' . $e->getMessage());
+            return false;
+        }
+    }
+    
 }
