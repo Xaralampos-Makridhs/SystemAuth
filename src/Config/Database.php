@@ -10,12 +10,19 @@
         private $conn;
 
         public function __construct(){
+            $this->host=$_ENV['HOST'];
+            $this->db_name=$_ENV['DB_NAME'];
+            $this->username=$_ENV['USERNAME'];
+            $this->password=$_ENV['PASSWORD'];
+            $this->port=$_ENV['PORT'];
+        }
+        public function getConnection(){
             $this->conn=null;
 
             try{
                 $this->conn=new PDO("mysql:host=".$this->host.";port=".$this->port.";dbname=".$this->db_name,
-                $this->username,
-                $this->password);
+                    $this->username,
+                    $this->password);
                 $this->conn->exec("set names utf8mb4");
 
                 $this->conn->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMODE_EXCEPTION);
