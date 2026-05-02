@@ -10,7 +10,7 @@
             ];
         }
 
-        public function displaypatch($currentMethod,$currentPath){
+        public function dispatch($currentMethod,$currentPath){
             foreach ($this->routes as $route){
                 if($route['method']===strtoupper($currentMethod) && $route['path']===$currentPath){
                     [$controllerName,$methodName]=explode('@',$route['action']);
