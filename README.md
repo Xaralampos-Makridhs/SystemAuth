@@ -251,3 +251,17 @@ The system uses **PHPMailer** with:
 * Secure TLS connection
 
 ---
+---
+
+## Styling (Optional)
+
+**Note:** This project does **not include any CSS or frontend styling**.
+
+The focus of SystemAuth is purely on **backend logic and security**.
+
+Anyone interested is welcome to:
+- Add their own UI/UX design  
+- Integrate a frontend framework (e.g. Bootstrap, Tailwind, etc.)  
+- Improve the overall user experience  
+
+---
