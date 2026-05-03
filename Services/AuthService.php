@@ -34,7 +34,6 @@ class AuthService
         try {
             $this->conn->beginTransaction();
 
-            // Insert user
             $stmt = $this->conn->prepare("
                 INSERT INTO users (name, email, password_hash)
                 VALUES (:name, :email, :password_hash)
@@ -84,6 +83,71 @@ class AuthService
             return false;
         }
     }
+
+    public function login($email,$password){
+        $email=strtolower($email);
+        $ip=$_SERVER['REMOTE_ADDR'] ?? 'unknown';
+
+        try{
+            $stmt=$this->conn->prepare("
+                SELECT COUNT(*)
+                FROM login_attempts
+                WHERE email=:email,
+                AND ip_address=:ip,
+                AND successful=0,
+                AND attempted_at>DATE_SUB(NOW(),INTERVAL 15 MINUTE)
+            ");
+
+            $stmt->execute([
+                ":email"=>$email,
+                ":ip"=>$ip
+                ]);
+
+            if((int)$stmt->fetchColumn()>=5){
+                return false;
+            }
+
+            //find user
+            $stmt=$this->conn->prepare("SELECT * FROM users WHERE email=:email LIMIT 1");
+            $stmt->execute([
+                ":email"=>$email
+            ]);
+
+            $user=$stmt->fetch();
+
+            $success=$user && password_verify($password,$user['password_hash']);
+
+            $stmt=$this->conn->prepare("
+                INSERT INTO login_attempts(email,ip_address,successful) VALUES (:email,:ip,:success)
+            ");
+
+            $stmt->execute([
+               ":email"=>$email,
+               ":ip"=>$ip,
+               ":success"=>$success
+            ]);
+
+            if(!$success){
+                return false;
+            }
+
+            if(!$user['email_verified_at']){
+                return false;
+            }
+
+            session_regenerate_id(true);
+
+            $_SESSION['user_id']=$user['id'];
+            $_SESSION['user_name']=$user['name'];
+            return true;
+        }catch (PDOException $e){
+            error_log("Login Error:").$e->getMessage();
+            return false;
+        }
+    }
+
+
+
 
     public function verifyEmail($token)
     {
@@ -148,5 +212,7 @@ class AuthService
             return false;
         }
     }
+
+
 
 }
