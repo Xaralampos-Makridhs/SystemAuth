@@ -146,8 +146,121 @@ class AuthService
         }
     }
 
+    public function sendPasswordReset($email){
+        $email=strtolower($email);
 
+        try{
+            $stmt=$this->conn->prepare("
+                SELECT id,name,email
+                FROM users
+                WHERE email=:email
+                LIMIT 1
+            ");
 
+            $stmt->execute([
+               ":email"=>$email
+            ]);
+
+            $user=$stmt->fetch();
+
+            if(!$user){
+                return true;
+            }
+            $token=$this->generateToken();
+            $tokenHash=$this->hashToken($token);
+
+            $stmt=$this->conn->prepare("
+                INSERT INTO password_reset_tokens(user_id,token_hash,expires_at) VALUES (:user_id,:token_hash,DATE_ADD(NOW(),INTERVAL 30 MINUTE))
+            ");
+
+            $stmt->execute([
+               ':user_id'=>$user['id'],
+                ':token_hash'=>$tokenHash
+            ]);
+
+            $link=$_ENV['APP_URL'].'/reset-password.php?token='.urlencode($token);
+
+            $html="
+                <h2>Password</h2>
+                <p>Hello {$user['name']}</p>
+                <p>Click the link below to reset your password:</p>
+                <p><a href='{$link}'>Reset Password</a></p>
+                <p>This link expires in 30 minutes</p>
+            ";
+
+            return $this->mailer->send($user['email'],'Reset your password',$html);
+        }catch (PDOException $e){
+            error_log("Password Reset Error: ").$e->getMessage();
+            return false;
+        }
+    }
+
+    public function resetPassword($token, $newPassword)
+    {
+        if (!$token || strlen($newPassword) < 8) {
+            return false;
+        }
+
+        $tokenHash = $this->hashToken($token);
+
+        try {
+            $stmt = $this->conn->prepare("
+            SELECT *
+            FROM password_reset_tokens
+            WHERE token_hash = :token_hash
+              AND used_at IS NULL
+              AND expires_at > NOW()
+            LIMIT 1
+        ");
+
+            $stmt->execute([
+                ':token_hash' => $tokenHash
+            ]);
+
+            $row = $stmt->fetch();
+
+            if (!$row) {
+                return false;
+            }
+
+            $passwordHash = password_hash($newPassword, PASSWORD_BCRYPT);
+
+            $this->conn->beginTransaction();
+
+            $stmt = $this->conn->prepare("
+            UPDATE users
+            SET password_hash = :password_hash
+            WHERE id = :user_id
+        ");
+
+            $stmt->execute([
+                ':password_hash' => $passwordHash,
+                ':user_id' => $row['user_id']
+            ]);
+
+            $stmt = $this->conn->prepare("
+            UPDATE password_reset_tokens
+            SET used_at = NOW()
+            WHERE id = :id
+        ");
+
+            $stmt->execute([
+                ':id' => $row['id']
+            ]);
+
+            $this->conn->commit();
+
+            return true;
+
+        } catch (PDOException $e) {
+            if ($this->conn->inTransaction()) {
+                $this->conn->rollBack();
+            }
+
+            error_log('Reset Password Error: ' . $e->getMessage());
+            return false;
+        }
+    }
 
     public function verifyEmail($token)
     {
@@ -212,7 +325,4 @@ class AuthService
             return false;
         }
     }
-
-
-
 }
