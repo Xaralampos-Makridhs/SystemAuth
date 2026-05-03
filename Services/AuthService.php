@@ -5,9 +5,10 @@ class AuthService
     private $conn;
     private $mailer;
 
-    public function __construct($conn,$mailer){
+    public function __construct($conn, $mailer)
+    {
         $this->conn = $conn;
-        $this->mailer=$mailer;
+        $this->mailer = $mailer;
     }
 
     private function generateToken()
@@ -40,9 +41,9 @@ class AuthService
             ");
 
             $stmt->execute([
-                ":name" => $name,
-                ":email" => $email,
-                ":password_hash" => $passwordHash
+                ':name' => $name,
+                ':email' => $email,
+                ':password_hash' => $passwordHash
             ]);
 
             $userId = (int) $this->conn->lastInsertId();
@@ -56,141 +57,214 @@ class AuthService
             ");
 
             $stmt->execute([
-                ":user_id" => $userId,
-                ":token_hash" => $tokenHash
+                ':user_id' => $userId,
+                ':token_hash' => $tokenHash
             ]);
 
             $this->conn->commit();
 
-            $link=$_ENV['APP_URL'].'/verify-email.php?token='.urlencode($token);
+            $link = $_ENV['APP_URL'] . '/verify-email.php?token=' . urlencode($token);
 
-            $html="
-                <h2>Verify Your Email </h2>
-                <p>Hello {$name}!</p>
+            $html = "
+                <h2>Verify Your Email</h2>
+                <p>Hello {$name},</p>
                 <p>Click the link below to verify your email.</p>
                 <p><a href='{$link}'>Verify Email</a></p>
                 <p>This link expires in 1 hour.</p>
             ";
 
-            return $this->mailer->send($email,'Verify Your Email',$html);
-
+            return $this->mailer->send($email, 'Verify Your Email', $html);
         } catch (PDOException $e) {
-            if($this->conn->inTransaction()){
+            if ($this->conn->inTransaction()) {
                 $this->conn->rollBack();
             }
 
-            error_log("Register Error: " . $e->getMessage());
+            error_log('Register Error: ' . $e->getMessage());
             return false;
         }
     }
 
-    public function login($email,$password){
-        $email=strtolower($email);
-        $ip=$_SERVER['REMOTE_ADDR'] ?? 'unknown';
+    public function login($email, $password)
+    {
+        $email = strtolower(trim($email));
+        $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
 
-        try{
-            $stmt=$this->conn->prepare("
+        try {
+            $stmt = $this->conn->prepare("
                 SELECT COUNT(*)
                 FROM login_attempts
-                WHERE email=:email,
-                AND ip_address=:ip,
-                AND successful=0,
-                AND attempted_at>DATE_SUB(NOW(),INTERVAL 15 MINUTE)
+                WHERE email = :email
+                  AND ip_address = :ip
+                  AND successful = 0
+                  AND attempted_at > DATE_SUB(NOW(), INTERVAL 15 MINUTE)
             ");
 
             $stmt->execute([
-                ":email"=>$email,
-                ":ip"=>$ip
-                ]);
+                ':email' => $email,
+                ':ip' => $ip
+            ]);
 
-            if((int)$stmt->fetchColumn()>=5){
+            if ((int) $stmt->fetchColumn() >= 5) {
                 return false;
             }
 
-            //find user
-            $stmt=$this->conn->prepare("SELECT * FROM users WHERE email=:email LIMIT 1");
-            $stmt->execute([
-                ":email"=>$email
-            ]);
-
-            $user=$stmt->fetch();
-
-            $success=$user && password_verify($password,$user['password_hash']);
-
-            $stmt=$this->conn->prepare("
-                INSERT INTO login_attempts(email,ip_address,successful) VALUES (:email,:ip,:success)
+            $stmt = $this->conn->prepare("
+                SELECT *
+                FROM users
+                WHERE email = :email
+                LIMIT 1
             ");
 
             $stmt->execute([
-               ":email"=>$email,
-               ":ip"=>$ip,
-               ":success"=>$success
+                ':email' => $email
             ]);
 
-            if(!$success){
+            $user = $stmt->fetch();
+
+            $success = $user && password_verify($password, $user['password_hash']);
+
+            $stmt = $this->conn->prepare("
+                INSERT INTO login_attempts (email, ip_address, successful)
+                VALUES (:email, :ip, :success)
+            ");
+
+            $stmt->execute([
+                ':email' => $email,
+                ':ip' => $ip,
+                ':success' => $success ? 1 : 0
+            ]);
+
+            if (!$success) {
                 return false;
             }
 
-            if(!$user['email_verified_at']){
+            if (!$user['email_verified_at']) {
                 return false;
             }
 
             session_regenerate_id(true);
 
-            $_SESSION['user_id']=$user['id'];
-            $_SESSION['user_name']=$user['name'];
+            $_SESSION['user_id'] = $user['id'];
+            $_SESSION['user_name'] = $user['name'];
+
             return true;
-        }catch (PDOException $e){
-            error_log("Login Error:").$e->getMessage();
+        } catch (PDOException $e) {
+            error_log('Login Error: ' . $e->getMessage());
             return false;
         }
     }
 
-    public function sendPasswordReset($email){
-        $email=strtolower($email);
+    public function verifyEmail($token)
+    {
+        if (!$token) {
+            return false;
+        }
 
-        try{
-            $stmt=$this->conn->prepare("
-                SELECT id,name,email
-                FROM users
-                WHERE email=:email
+        $tokenHash = $this->hashToken($token);
+
+        try {
+            $stmt = $this->conn->prepare("
+                SELECT *
+                FROM email_verified_tokens
+                WHERE token_hash = :token_hash
+                  AND used_at IS NULL
+                  AND expires_at > NOW()
                 LIMIT 1
             ");
 
             $stmt->execute([
-               ":email"=>$email
+                ':token_hash' => $tokenHash
             ]);
 
-            $user=$stmt->fetch();
+            $row = $stmt->fetch();
 
-            if(!$user){
-                return true;
+            if (!$row) {
+                return false;
             }
-            $token=$this->generateToken();
-            $tokenHash=$this->hashToken($token);
 
-            $stmt=$this->conn->prepare("
-                INSERT INTO password_reset_tokens(user_id,token_hash,expires_at) VALUES (:user_id,:token_hash,DATE_ADD(NOW(),INTERVAL 30 MINUTE))
+            $this->conn->beginTransaction();
+
+            $stmt = $this->conn->prepare("
+                UPDATE users
+                SET email_verified_at = NOW()
+                WHERE id = :user_id
             ");
 
             $stmt->execute([
-               ':user_id'=>$user['id'],
-                ':token_hash'=>$tokenHash
+                ':user_id' => $row['user_id']
             ]);
 
-            $link=$_ENV['APP_URL'].'/reset-password.php?token='.urlencode($token);
+            $stmt = $this->conn->prepare("
+                UPDATE email_verified_tokens
+                SET used_at = NOW()
+                WHERE id = :id
+            ");
 
-            $html="
-                <h2>Password</h2>
-                <p>Hello {$user['name']}</p>
+            $stmt->execute([
+                ':id' => $row['id']
+            ]);
+
+            $this->conn->commit();
+
+            return true;
+        } catch (PDOException $e) {
+            if ($this->conn->inTransaction()) {
+                $this->conn->rollBack();
+            }
+
+            error_log('Verify Email Error: ' . $e->getMessage());
+            return false;
+        }
+    }
+
+    public function sendPasswordReset($email)
+    {
+        $email = strtolower(trim($email));
+
+        try {
+            $stmt = $this->conn->prepare("
+                SELECT id, name, email
+                FROM users
+                WHERE email = :email
+                LIMIT 1
+            ");
+
+            $stmt->execute([
+                ':email' => $email
+            ]);
+
+            $user = $stmt->fetch();
+
+            if (!$user) {
+                return true;
+            }
+
+            $token = $this->generateToken();
+            $tokenHash = $this->hashToken($token);
+
+            $stmt = $this->conn->prepare("
+                INSERT INTO password_reset_tokens (user_id, token_hash, expires_at)
+                VALUES (:user_id, :token_hash, DATE_ADD(NOW(), INTERVAL 30 MINUTE))
+            ");
+
+            $stmt->execute([
+                ':user_id' => $user['id'],
+                ':token_hash' => $tokenHash
+            ]);
+
+            $link = $_ENV['APP_URL'] . '/reset-password.php?token=' . urlencode($token);
+
+            $html = "
+                <h2>Password Reset</h2>
+                <p>Hello {$user['name']},</p>
                 <p>Click the link below to reset your password:</p>
                 <p><a href='{$link}'>Reset Password</a></p>
-                <p>This link expires in 30 minutes</p>
+                <p>This link expires in 30 minutes.</p>
             ";
 
-            return $this->mailer->send($user['email'],'Reset your password',$html);
-        }catch (PDOException $e){
-            error_log("Password Reset Error: ").$e->getMessage();
+            return $this->mailer->send($user['email'], 'Reset your password', $html);
+        } catch (PDOException $e) {
+            error_log('Password Reset Error: ' . $e->getMessage());
             return false;
         }
     }
@@ -205,13 +279,13 @@ class AuthService
 
         try {
             $stmt = $this->conn->prepare("
-            SELECT *
-            FROM password_reset_tokens
-            WHERE token_hash = :token_hash
-              AND used_at IS NULL
-              AND expires_at > NOW()
-            LIMIT 1
-        ");
+                SELECT *
+                FROM password_reset_tokens
+                WHERE token_hash = :token_hash
+                  AND used_at IS NULL
+                  AND expires_at > NOW()
+                LIMIT 1
+            ");
 
             $stmt->execute([
                 ':token_hash' => $tokenHash
@@ -228,10 +302,10 @@ class AuthService
             $this->conn->beginTransaction();
 
             $stmt = $this->conn->prepare("
-            UPDATE users
-            SET password_hash = :password_hash
-            WHERE id = :user_id
-        ");
+                UPDATE users
+                SET password_hash = :password_hash
+                WHERE id = :user_id
+            ");
 
             $stmt->execute([
                 ':password_hash' => $passwordHash,
@@ -239,10 +313,10 @@ class AuthService
             ]);
 
             $stmt = $this->conn->prepare("
-            UPDATE password_reset_tokens
-            SET used_at = NOW()
-            WHERE id = :id
-        ");
+                UPDATE password_reset_tokens
+                SET used_at = NOW()
+                WHERE id = :id
+            ");
 
             $stmt->execute([
                 ':id' => $row['id']
@@ -251,77 +325,12 @@ class AuthService
             $this->conn->commit();
 
             return true;
-
         } catch (PDOException $e) {
             if ($this->conn->inTransaction()) {
                 $this->conn->rollBack();
             }
 
             error_log('Reset Password Error: ' . $e->getMessage());
-            return false;
-        }
-    }
-
-    public function verifyEmail($token)
-    {
-        if (!$token) {
-            return false;
-        }
-
-        $tokenHash = $this->hashToken($token);
-
-        try {
-            $stmt = $this->conn->prepare("
-            SELECT *
-            FROM email_verified_tokens
-            WHERE token_hash = :token_hash
-              AND used_at IS NULL
-              AND expires_at > NOW()
-            LIMIT 1
-        ");
-
-            $stmt->execute([
-                ':token_hash' => $tokenHash
-            ]);
-
-            $row = $stmt->fetch();
-
-            if (!$row) {
-                return false;
-            }
-
-            $this->conn->beginTransaction();
-
-            $stmt = $this->conn->prepare("
-            UPDATE users
-            SET email_verified_at = NOW()
-            WHERE id = :user_id
-        ");
-
-            $stmt->execute([
-                ':user_id' => $row['user_id']
-            ]);
-
-            $stmt = $this->conn->prepare("
-            UPDATE email_verified_tokens
-            SET used_at = NOW()
-            WHERE id = :id
-        ");
-
-            $stmt->execute([
-                ':id' => $row['id']
-            ]);
-
-            $this->conn->commit();
-
-            return true;
-
-        } catch (PDOException $e) {
-            if ($this->conn->inTransaction()) {
-                $this->conn->rollBack();
-            }
-
-            error_log('Verify Email Error: ' . $e->getMessage());
             return false;
         }
     }
