@@ -10,7 +10,7 @@ $conn = $database->getConnection();
 $mailer = new MailService();
 $auth = new AuthService($conn, $mailer);
 
-$token = $_GET['token'] ?? '';
+$token = trim($_GET['token'] ?? '');
 
 if ($auth->verifyEmail($token)) {
     echo 'Email verified successfully. <a href="login.php">Login</a>';
