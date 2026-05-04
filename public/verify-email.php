@@ -1,19 +1,30 @@
 <?php
 
-require_once __DIR__ . '/../Config/Database.php';
-require_once __DIR__ . '/../Services/MailService.php';
-require_once __DIR__ . '/../Services/AuthService.php';
+    // Include the Database class file
+    require_once __DIR__ . '/../Config/Database.php';
+    // Include the MailService class file (used for sending emails)
+    require_once __DIR__ . '/../Services/MailService.php';
+    // Include the AuthService class file (handles authentication logic)
+    require_once __DIR__ . '/../Services/AuthService.php';
 
-$database = new Database();
-$conn = $database->getConnection();
+    // Create a new Database instance
+    $database = new Database();
+    // Get a database connection
+    $conn = $database->getConnection();
 
-$mailer = new MailService();
-$auth = new AuthService($conn, $mailer);
+    // Create a new MailService instance
+    $mailer = new MailService();
+    // Create a new AuthService instance with database connection and mail service
+    $auth = new AuthService($conn, $mailer);
 
-$token = trim($_GET['token'] ?? '');
+    // Get the verification token from the URL and remove extra spaces
+    $token = trim($_GET['token'] ?? '');
 
-if ($auth->verifyEmail($token)) {
-    echo 'Email verified successfully. <a href="login.php">Login</a>';
-} else {
-    echo 'Invalid or expired verification link.';
-}
+    // Attempt to verify the user's email using the token
+    if ($auth->verifyEmail($token)) {
+        // Display success message with a login link
+        echo 'Email verified successfully. <a href="login.php">Login</a>';
+    } else {
+        // Display error message if token is invalid or expired
+        echo 'Invalid or expired verification link.';
+    }
