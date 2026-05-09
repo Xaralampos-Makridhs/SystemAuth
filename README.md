@@ -104,7 +104,6 @@ SystemAuth/
 * **Security:** BCRYPT, SHA256, PDO with Prepared Statements
 * **Email:** PHPMailer 7.0+
 * **Environment:** Dotenv 5.6+
-* 
 ---
 
 ##  Security
